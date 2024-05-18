@@ -1,25 +1,16 @@
 #!/bin/bash
 
+
+### Menu
+while [[ True ]];
+do
 clear
-
-#read -p "Continue? (Y/N): " confirm && [[ $confirm == [yY] ]] || exit 1
-
 echo "Sync Carddav contacts for Ubuntu Touch Focal"
 echo
-
-### Main Menu
-options=("Create Synchronization" "Remove Synchronization")
-PS3="Select an option : "
-# TODO when back here, show options again
-select opt in "${options[@]}" "Quit"; do
-    case "$REPLY" in
-    1) clear
-    echo "$opt";;
-    2) clear
-    echo "$opt";;
-    $((${#options[@]}+1))) echo "Goodbye!"; break;;
-    *) echo "Invalid option. Try another one.";continue;;
-    esac
+echo "1 - Create Synchronization"
+echo "2 - Remove Synchronization"
+echo "3 - Quit"
+read -p "Select (1-2-3) : " REPLY
 
 while [[ True ]];
 do
@@ -27,31 +18,69 @@ do
     if [[ $REPLY == 1 ]]; then
 
         # Get sync infos
+        clear
+        echo "Create Synchronization"
         echo
         echo "Get Synchronization informations"
         echo
-        read -p "Enter Contacts URL :" CONTACTS_URL
-        read -p "Enter Username :" USERNAME
-        read -s -p "Enter Password :" PASSWORD
+        read -p "Enter Contacts URL : " CONTACTS_URL
+        read -p "Enter Username : " USERNAME
+        read -s -p "Enter Password : " PASSWORD
         echo
-        read -p "Enter Config Name :" CONTACTS_CONFIG_NAME
-        read -p "Enter Contacts Name :" CONTACTS_NAME
-        read -p "Enter Contacts Visual Name :" CONTACTS_VISUAL_NAME
-
-        # Get Confirmation
-        clear
-        echo "Check Synchronization informations :"
+        read -p "Enter Config Name : " CONTACTS_CONFIG_NAME
+        read -p "Enter Contacts Name : " CONTACTS_NAME
+        read -p "Enter Contacts Visual Name : " CONTACTS_VISUAL_NAME
         echo
-        echo "Contacts URL :"$CONTACTS_URL
-        echo "Username :"$USERNAME
-        echo "Config Name :"$CONTACTS_CONFIG_NAME
-        echo "Contacts Name :"$CONTACTS_NAME
-        echo "Contacts Visual Name :"$CONTACTS_VISUAL_NAME
+        read -p "Create Manual Sync Icon ? (Y/N) " DESKTOPFILE
+        read -p "Create Automatic Systemd Sync ? (Y/N) " SYSTEMD
+        while :
+        do
+        if [[ $SYSTEMD == [yY] ]]; then
+            read -p "Automatic Systemd Sync Frequency (1-WEEKLY, 2-DAILY, 3-PRECISE) : " SYSTEMDFREQTYPE
+            if [[ $SYSTEMDFREQTYPE != [123] ]]; then
+                echo "Invalid Entry"
+                continue
+            fi
+            if [[ $SYSTEMDFREQTYPE == 1 ]]; then
+                read -p "Day for the Sync Process to start (Mon, Tue, Wed, Thu, Fri, Sat, Sun) : " SYSTEMDFREQDAY
+                #if [[ ${array[@]} =~ $element ]]
+                DAYS=("Mon" "Tue" "Wed" "Thu" "Fri" "Sat" "Sun")
+                if ! [[ ${DAYS[@]} =~ $SYSTEMDFREQDAY ]]; then
+                    echo "Invalid Entry"
+                        continue
+                fi
+            fi
+            if [[ $SYSTEMDFREQTYPE == 3 ]]; then
+                read -p "Sync Frequency in Hours (0-999) : " SYSTEMDFREQHOUR
+                if ! echo $SYSTEMDFREQHOUR | egrep -q '^[0-9]+$'; then
+                    echo "Invalid Entry"
+                    continue
+                fi
+                if ! (($SYSTEMDFREQHOUR >= 0 && $SYSTEMDFREQHOUR <= 999)); then
+                    echo "Invalid Entry"
+                    continue
+                fi
+            else
+                read -p "Hour for the Sync Process to start (0-23): " SYSTEMDFREQHOUR
+                if ! echo $SYSTEMDFREQHOUR | egrep -q '^[0-9]+$'; then
+                    echo "Invalid Entry"
+                    continue
+                fi
+                if ! (($SYSTEMDFREQHOUR >= 0 && $SYSTEMDFREQHOUR <= 23)); then
+                    echo "Invalid Entry"
+                    continue
+                fi
+            fi
+        fi
+        break
+        done
         echo
-        read -p "Process ? (Y/N): " confirm && [[ $confirm == [yY] ]] || break
+        read -p "Process ? (Y/N) : " confirm && [[ $confirm == [yY] ]] || break
 
         # Process sync
         clear
+        echo "Create Synchronization"
+        echo
         echo "Creating Synchronization"
         echo
         #Create contact list
@@ -72,8 +101,67 @@ do
         echo "Synchronization of $CONTACTS_VISUAL_NAME Created"
 
         # Create desktop file
+        if [[ $DESKTOPFILE == [yY] ]]; then
+            echo
+            echo "Creating Desktop File"
+            filename="sync.$CONTACTS_VISUAL_NAME.tonton"
+            file=/home/phablet/$filename.txt
+            echo "[Desktop Entry]" > $file
+            echo "Type=Application" >> $file
+            echo "Name=Sync $CONTACTS_VISUAL_NAME" >> $file
+            echo "Exec=syncevolution --sync two-way $CONTACTS_CONFIG_NAME" >> $file
+            echo "Terminal=false" >> $file
+            echo "Icon=/usr/share/icons/suru/status/scalable/syncing.svg" >> $file
+            mv $file /home/phablet/.local/share/applications/$filename.desktop
+            echo "Desktop File Created"
+        fi
 
         # Create system d timer
+        if [[ $SYSTEMD == [yY] ]]; then
+            echo
+            echo "Creating Sync Timer"
+            filename="sync_carddav_$CONTACTS_VISUAL_NAME"
+            file=/home/phablet/$filename.txt
+
+            # Service file
+            echo "[Unit]" > $file
+            echo "Description=sync carddav $CONTACTS_CONFIG_NAME" >> $file
+            echo "[Service]" >> $file
+            echo "Type=oneshot" >> $file
+            echo "ExecStart=syncevolution --sync two-way $CONTACTS_CONFIG_NAME" >> $file
+            echo "[Install]" >> $file
+            echo "WantedBy=default.target" >> $file
+            mv $file .config/systemd/user/$filename.service
+
+            # Timer file
+            echo "[Unit]" > $file
+            echo "Description=sync carddav $CONTACTS_CONFIG_NAME" >> $file
+            echo "[Timer]" >> $file
+            echo "OnStartupSec=0min" >> $file
+            if [[ $SYSTEMDFREQTYPE == 3 ]]; then
+                echo "OnUnitActiveSec=${SYSTEMDFREQHOUR}h" >> $file
+            elif [[ $SYSTEMDFREQTYPE == 1 ]]; then
+                echo "OnCalendar=${SYSTEMDFREQDAY} *-*-* ${SYSTEMDFREQHOUR}:00:00" >> $file
+            elif [[ $SYSTEMDFREQTYPE == 2 ]]; then
+                echo "OnCalendar=*-*-* ${SYSTEMDFREQHOUR}:00:00" >> $file
+            fi
+            echo "Persistent=true" >> $file
+            echo "[Install]" >> $file
+            echo "WantedBy=timers.target" >> $file
+            mv $file .config/systemd/user/$filename.timer
+
+            echo "Systemd Timer Files Created"
+            echo "Starting Systemd Services"
+            systemctl --user daemon-reload
+            systemctl --user start $filename.service
+            systemctl --user start $filename.timer
+            echo "Systemd Services Started"
+        fi
+
+        echo
+        echo "Synchronization Set"
+        echo
+        read -n 1 -s -r -p "Press any key to continue"
 
         break
 
@@ -81,24 +169,58 @@ do
     elif [[ $REPLY == 2 ]]; then
 
         # Get sync infos
+        clear
+        echo "Remove Synchronization"
         echo
         read -p "Name of the Synchronization to remove : " CONTACTS_VISUAL_NAME
-
-        # Confirmation
-        clear
-        read -p "Remove $CONTACTS_VISUAL_NAME ? (Y/N): " confirm && [[ $confirm == [yY] ]] || break
+        echo
+        read -p "Process ? (Y/N) : " confirm && [[ $confirm == [yY] ]] || break
 
         # Remove sync
         clear
+        echo "Remove Synchronization"
+        echo
         echo "Removing Synchronization"
         syncevolution --remove-database backend=evolution-contacts database=$CONTACTS_VISUAL_NAME
         echo
-        echo "Removal of $CONTACTS_VISUAL_NAME Synchronization Done"
+        echo "$CONTACTS_VISUAL_NAME Synchronization Removed"
 
         # Remove desktop file
+        echo
+        echo "Removing Desktop File"
+        file=/home/phablet/.local/share/applications/sync.$CONTACTS_VISUAL_NAME.tonton.desktop
+        rm $file
+        echo "Desktop File Removed"
 
         # Remove system d timer
+        echo
+        echo "Removing Sync Timer"
+        echo "Stopping Systemd Services"
+        filename="sync_carddav_$CONTACTS_VISUAL_NAME"
+        systemctl --user stop $filename.timer
+        systemctl --user stop $filename.service
+        echo "Systemd Services Stopped"
+        echo "Removing Systemd Timer Files"
+        rm .config/systemd/user/$filename.service
+        rm .config/systemd/user/$filename.timer
+        echo "Systemd Timer Files Removed"
+        echo "Reloading Systemd Services"
+        systemctl --user daemon-reload
 
+        echo
+        echo "Synchronization Removed"
+        echo
+        read -n 1 -s -r -p "Press any key to continue"
+
+        break
+
+    ### Quit
+    elif [[ $REPLY == 3 ]]; then
+        clear
+        exit
+
+    ### Invalid entry
+    else
         break
 
     fi
