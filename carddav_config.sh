@@ -178,6 +178,7 @@ do
             echo "Systemd Timer Files Created"
             echo "Starting Systemd Services"
             systemctl --user daemon-reload
+            systemctl --user enable $filename.timer
             systemctl --user start $filename.service
             systemctl --user start $filename.timer
             echo "Systemd Services Started"
